@@ -1,0 +1,149 @@
+name: Deploy Node.js App to AWS EC2
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm install
+    
+    - name: Run tests
+      run: npm test
+    
+    - name: Test application startup
+      run: |
+        timeout 30s npm start &
+        sleep 5
+        curl -f http://localhost:3000/health || exit 1
+
+#   deploy:
+#     needs: test
+#     runs-on: ubuntu-latest
+#     if: github.ref == 'refs/heads/main'
+    
+#     steps:
+#     - name: Checkout code
+#       uses: actions/checkout@v4
+    
+#     - name: Setup Node.js
+#       uses: actions/setup-node@v4
+#       with:
+#         node-version: '18'
+#         cache: 'npm'
+    
+#     - name: Install dependencies
+#       run: npm install --production
+    
+#     - name: Create deployment archive
+#       run: |
+#         tar -czf app.tar.gz --exclude='.git' --exclude='node_modules' --exclude='.github' .
+        
+#     - name: Configure AWS credentials
+#       uses: aws-actions/configure-aws-credentials@v4
+#       with:
+#         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+#         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+#         aws-region: ${{ secrets.AWS_REGION }}
+    
+#     - name: Copy files to EC2
+#       run: |
+#         echo "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > private_key.pem
+#         chmod 600 private_key.pem
+        
+#         # Copy the application archive to EC2
+#         scp -i private_key.pem -o StrictHostKeyChecking=no app.tar.gz ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/home/${{ secrets.EC2_USER }}/
+        
+#         # Copy deployment script to EC2
+#         scp -i private_key.pem -o StrictHostKeyChecking=no deploy-script.sh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/home/${{ secrets.EC2_USER }}/
+    
+#     - name: Create deployment script
+#       run: |
+#         cat > deploy-script.sh << 'EOF'
+#         #!/bin/bash
+#         set -e
+        
+#         echo "Starting deployment..."
+        
+#         # Navigate to app directory
+#         cd /home/${{ secrets.EC2_USER }}
+        
+#         # Stop existing application (if running)
+#         sudo pkill -f "node app.js" || true
+#         sudo systemctl stop simple-node-app || true
+        
+#         # Backup existing app (if exists)
+#         if [ -d "simple-node-app" ]; then
+#             mv simple-node-app simple-node-app-backup-$(date +%Y%m%d_%H%M%S)
+#         fi
+        
+#         # Create new app directory and extract
+#         mkdir -p simple-node-app
+#         tar -xzf app.tar.gz -C simple-node-app
+#         cd simple-node-app
+        
+#         # Install dependencies
+#         npm install --production
+        
+#         # Set up systemd service (if not exists)
+#         if [ ! -f "/etc/systemd/system/simple-node-app.service" ]; then
+#             sudo tee /etc/systemd/system/simple-node-app.service > /dev/null <<EOL
+#         [Unit]
+#         Description=Simple Node.js App
+#         After=network.target
+        
+#         [Service]
+#         Type=simple
+#         User=${{ secrets.EC2_USER }}
+#         WorkingDirectory=/home/${{ secrets.EC2_USER }}/simple-node-app
+#         ExecStart=/usr/bin/node app.js
+#         Restart=on-failure
+#         RestartSec=10
+#         Environment=NODE_ENV=production
+#         Environment=PORT=3000
+        
+#         [Install]
+#         WantedBy=multi-user.target
+#         EOL
+#             sudo systemctl daemon-reload
+#             sudo systemctl enable simple-node-app
+#         fi
+        
+#         # Start the application
+#         sudo systemctl start simple-node-app
+#         sudo systemctl status simple-node-app
+        
+#         echo "Deployment completed successfully!"
+#         EOF
+        
+#         chmod +x deploy-script.sh
+    
+#     - name: Deploy to EC2
+#       run: |
+#         ssh -i private_key.pem -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} 'bash deploy-script.sh'
+    
+#     - name: Verify deployment
+#       run: |
+#         sleep 10
+#         curl -f http://${{ secrets.EC2_HOST }}:3000/health || exit 1
+#         echo "✅ Deployment verified successfully!"
+    
+#     - name: Cleanup
+#       run: |
+#         rm -f private_key.pem
+#         ssh -i private_key.pem -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} 'rm -f app.tar.gz deploy-script.sh' || true
