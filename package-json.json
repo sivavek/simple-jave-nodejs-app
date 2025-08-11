@@ -1,0 +1,25 @@
+{
+  "name": "simple-node-app",
+  "version": "1.0.0",
+  "description": "A simple Node.js Express app for GitHub Actions workflow testing",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "dev": "node app.js",
+    "test": "echo \"No tests specified\" && exit 0"
+  },
+  "keywords": [
+    "nodejs",
+    "express",
+    "github-actions",
+    "nginx"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}

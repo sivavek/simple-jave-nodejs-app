@@ -1,0 +1,68 @@
+name: Deploy Simple Node.js App
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Use Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm install
+    
+    - name: Run tests
+      run: npm test
+    
+    - name: Test application startup
+      run: |
+        timeout 30s npm start &
+        sleep 5
+        curl -f http://localhost:3000/health || exit 1
+
+  build-and-deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Use Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm install --production
+    
+    - name: Create deployment package
+      run: |
+        mkdir deploy
+        cp -r . deploy/
+        cd deploy && rm -rf .git node_modules
+        cd deploy && npm install --production
+    
+    # Add your deployment steps here
+    # For example, you might:
+    # - Build a Docker image
+    # - Deploy to a server via SSH
+    # - Upload to a cloud service
+    
+    - name: Archive production artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: production-files
+        path: deploy/
