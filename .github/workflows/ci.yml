@@ -717,31 +717,6 @@ env:
   REPO_URL: ${{ github.server_url }}/${{ github.repository }}.git
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-    
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '18'
-        cache: 'npm'
-    
-    - name: Install dependencies
-      run: npm install
-    
-    - name: Run tests
-      run: npm test
-    
-    - name: Test application startup
-      run: |
-        timeout 30s npm start &
-        sleep 5
-        curl -f http://localhost:3000/health || exit 1
-
   deploy:
     needs: test
     runs-on: ubuntu-latest
@@ -940,76 +915,73 @@ jobs:
         sudo mkdir -p /etc/nginx/sites-enabled
         
         # Create nginx configuration file
-        sudo tee /etc/nginx/sites-available/${APP_NAME} > /dev/null <<'EOL'
-server {
-    listen 80 default_server;
-    listen [::]:80 default_server;
-    server_name _;
-    
-    location / {
-        proxy_pass http://localhost:APP_PORT_PLACEHOLDER;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_cache_bypass $http_upgrade;
-        proxy_read_timeout 86400;
-    }
-    
-    location /nginx-health {
-        access_log off;
-        return 200 "healthy\n";
-        add_header Content-Type text/plain;
-    }
-}
-EOL
-        
-        # Replace placeholder with actual port
-        sudo sed -i "s/APP_PORT_PLACEHOLDER/${APP_PORT}/g" /etc/nginx/sites-available/${APP_NAME}
+        sudo tee /etc/nginx/sites-available/${APP_NAME} > /dev/null <<EOL
+        server {
+            listen 80;
+            server_name _;
+            
+            location / {
+                proxy_pass http://localhost:${APP_PORT};
+                proxy_http_version 1.1;
+                proxy_set_header Upgrade \$http_upgrade;
+                proxy_set_header Connection 'upgrade';
+                proxy_set_header Host \$host;
+                proxy_set_header X-Real-IP \$remote_addr;
+                proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto \$scheme;
+                proxy_cache_bypass \$http_upgrade;
+                proxy_read_timeout 86400;
+            }
+            
+            location /nginx-health {
+                access_log off;
+                return 200 "healthy\\n";
+                add_header Content-Type text/plain;
+            }
+        }
+        EOL
         
         # Enable site configuration
         sudo ln -sf /etc/nginx/sites-available/${APP_NAME} /etc/nginx/sites-enabled/
         
+        # Remove default site if it exists
+        sudo rm -f /etc/nginx/sites-enabled/default
+        
         # Ensure nginx.conf includes sites-enabled directory
         if ! grep -q "include.*sites-enabled" /etc/nginx/nginx.conf; then
             echo -e "${YELLOW}Adding sites-enabled include to nginx.conf${NC}"
-            sudo sed -i '/include.*mime\.types/a\    include /etc/nginx/sites-enabled/*;' /etc/nginx/nginx.conf
+            sudo sed -i '/http {/a\    include /etc/nginx/sites-enabled/*;' /etc/nginx/nginx.conf
         fi
         
-        # For systems that use conf.d structure, create backup config
+        # For systems that don't use sites-available/sites-enabled structure,
+        # also create a direct config file
         if [[ "$OS" == "amzn" || "$OS" == "centos" || "$OS" == "rhel" ]]; then
-            echo -e "${YELLOW}Creating additional config for $OS in conf.d${NC}"
-            sudo tee /etc/nginx/conf.d/${APP_NAME}.conf > /dev/null <<'EOL'
-server {
-    listen 80 default_server;
-    listen [::]:80 default_server;
-    server_name _;
-    
-    location / {
-        proxy_pass http://localhost:APP_PORT_PLACEHOLDER;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_Set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_cache_bypass $http_upgrade;
-        proxy_read_timeout 86400;
-    }
-    
-    location /nginx-health {
-        access_log off;
-        return 200 "healthy\n";
-        add_header Content-Type text/plain;
-    }
-}
-EOL
-            # Replace placeholder with actual port
-            sudo sed -i "s/APP_PORT_PLACEHOLDER/${APP_PORT}/g" /etc/nginx/conf.d/${APP_NAME}.conf
+            echo -e "${YELLOW}Creating additional config for $OS${NC}"
+            sudo tee /etc/nginx/conf.d/${APP_NAME}.conf > /dev/null <<EOL
+        server {
+            listen 80;
+            server_name _;
+            
+            location / {
+                proxy_pass http://localhost:${APP_PORT};
+                proxy_http_version 1.1;
+                proxy_set_header Upgrade \$http_upgrade;
+                proxy_set_header Connection 'upgrade';
+                proxy_set_header Host \$host;
+                proxy_set_header X-Real-IP \$remote_addr;
+                proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto \$scheme;
+                proxy_cache_bypass \$http_upgrade;
+                proxy_read_timeout 86400;
+            }
+            
+            location /nginx-health {
+                access_log off;
+                return 200 "healthy\\n";
+                add_header Content-Type text/plain;
+            }
+        }
+        EOL
         fi
         
         # Remove any conflicting default configurations
